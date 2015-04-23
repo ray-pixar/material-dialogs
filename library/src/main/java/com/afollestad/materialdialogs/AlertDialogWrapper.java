@@ -1,6 +1,6 @@
 package com.afollestad.materialdialogs;
 
-import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.graphics.drawable.Drawable;
@@ -12,8 +12,6 @@ import android.support.annotation.Nullable;
 import android.support.annotation.StringRes;
 import android.view.View;
 import android.widget.ListAdapter;
-
-import com.afollestad.materialdialogs.MaterialDialog;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -31,11 +29,15 @@ public class AlertDialogWrapper {
         private DialogInterface.OnClickListener negativeDialogListener;
         private DialogInterface.OnClickListener positiveDialogListener;
         private DialogInterface.OnClickListener neutralDialogListener;
-
         private DialogInterface.OnClickListener onClickListener;
 
         public Builder(@NonNull Context context) {
             builder = new MaterialDialog.Builder(context);
+        }
+
+        public Builder autoDismiss(boolean dismiss) {
+            builder.autoDismiss(dismiss);
+            return this;
         }
 
         public Builder setMessage(@StringRes int messageId) {
@@ -120,7 +122,7 @@ public class AlertDialogWrapper {
             return this;
         }
 
-        public Builder setItems(@ArrayRes int itemsId, final DialogInterface.OnClickListener listener) {
+        public Builder setItems(@ArrayRes int itemsId, DialogInterface.OnClickListener listener) {
             builder.items(itemsId);
             onClickListener = listener;
             return this;
@@ -132,24 +134,45 @@ public class AlertDialogWrapper {
             return this;
         }
 
+        /**
+         * @param adapter The adapter to set.
+         * @return An instance of the Builder for chaining.
+         * @deprecated Use {@link #setAdapter(ListAdapter, DialogInterface.OnClickListener)} instead.
+         */
+        @Deprecated
         public Builder setAdapter(ListAdapter adapter) {
+            return setAdapter(adapter, null);
+        }
+
+        /**
+         * @param adapter  The adapter to set.
+         * @param listener The listener called when list items are clicked.
+         * @return An instance of the Builder for chaining.
+         */
+        public Builder setAdapter(ListAdapter adapter, final DialogInterface.OnClickListener listener) {
             builder.adapter = adapter;
+            builder.listCallbackCustom = new MaterialDialog.ListCallback() {
+                @Override
+                public void onSelection(MaterialDialog dialog, View itemView, int which, CharSequence text) {
+                    listener.onClick(dialog, which);
+                }
+            };
             return this;
         }
 
-        public AlertDialog create() {
+        public Dialog create() {
             addButtonsCallback();
-            addItemsCallBack();
+            addListCallbacks();
             return builder.build();
         }
 
-        public AlertDialog show() {
-            AlertDialog dialog = create();
+        public Dialog show() {
+            Dialog dialog = create();
             dialog.show();
             return dialog;
         }
 
-        private void addItemsCallBack() {
+        private void addListCallbacks() {
             if (onClickListener != null) {
                 builder.itemsCallback(new MaterialDialog.ListCallback() {
                     @Override
@@ -220,6 +243,16 @@ public class AlertDialogWrapper {
             return this;
         }
 
+        public Builder alwaysCallSingleChoiceCallback() {
+            builder.alwaysCallSingleChoiceCallback();
+            return this;
+        }
+
+        public Builder alwaysCallMultiChoiceCallback() {
+            builder.alwaysCallMultiChoiceCallback();
+            return this;
+        }
+
         private void setUpMultiChoiceCallback(@Nullable final boolean[] checkedItems, final DialogInterface.OnMultiChoiceClickListener listener) {
             Integer selectedIndicesArr[] = null;
             /* Convert old style array of booleans-per-index to new list of indices */
@@ -233,9 +266,9 @@ public class AlertDialogWrapper {
                 selectedIndicesArr = selectedIndices.toArray(new Integer[selectedIndices.size()]);
             }
 
-            builder.itemsCallbackMultiChoice(selectedIndicesArr, new MaterialDialog.ListCallbackMulti() {
+            builder.itemsCallbackMultiChoice(selectedIndicesArr, new MaterialDialog.ListCallbackMultiChoice() {
                 @Override
-                public void onSelection(MaterialDialog dialog, Integer[] which, CharSequence[] text) {
+                public boolean onSelection(MaterialDialog dialog, Integer[] which, CharSequence[] text) {
                     /* which is a list of selected indices */
                     List<Integer> whichList = Arrays.asList(which);
                     if (checkedItems != null) {
@@ -250,6 +283,7 @@ public class AlertDialogWrapper {
                             }
                         }
                     }
+                    return true;
                 }
             });
         }
@@ -264,10 +298,11 @@ public class AlertDialogWrapper {
          */
         public Builder setSingleChoiceItems(@NonNull String[] items, int checkedItem, final DialogInterface.OnClickListener listener) {
             builder.items(items);
-            builder.itemsCallbackSingleChoice(checkedItem, new MaterialDialog.ListCallback() {
+            builder.itemsCallbackSingleChoice(checkedItem, new MaterialDialog.ListCallbackSingleChoice() {
                 @Override
-                public void onSelection(MaterialDialog dialog, View itemView, int which, CharSequence text) {
+                public boolean onSelection(MaterialDialog dialog, View itemView, int which, CharSequence text) {
                     listener.onClick(dialog, which);
+                    return true;
                 }
             });
             return this;
@@ -283,10 +318,11 @@ public class AlertDialogWrapper {
          */
         public Builder setSingleChoiceItems(@ArrayRes int itemsId, int checkedItem, final DialogInterface.OnClickListener listener) {
             builder.items(itemsId);
-            builder.itemsCallbackSingleChoice(checkedItem, new MaterialDialog.ListCallback() {
+            builder.itemsCallbackSingleChoice(checkedItem, new MaterialDialog.ListCallbackSingleChoice() {
                 @Override
-                public void onSelection(MaterialDialog dialog, View itemView, int which, CharSequence text) {
+                public boolean onSelection(MaterialDialog dialog, View itemView, int which, CharSequence text) {
                     listener.onClick(dialog, which);
+                    return true;
                 }
             });
             return this;

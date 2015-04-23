@@ -1,15 +1,9 @@
 package com.afollestad.materialdialogs;
 
 import android.annotation.SuppressLint;
-import android.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
-import android.content.res.ColorStateList;
-import android.content.res.Resources;
-import android.content.res.TypedArray;
-import android.graphics.Color;
-import android.graphics.PorterDuff;
-import android.graphics.Rect;
+import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
@@ -17,51 +11,48 @@ import android.os.Looper;
 import android.support.annotation.ArrayRes;
 import android.support.annotation.AttrRes;
 import android.support.annotation.ColorRes;
+import android.support.annotation.DimenRes;
 import android.support.annotation.DrawableRes;
 import android.support.annotation.LayoutRes;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.annotation.StringRes;
-import android.text.method.LinkMovementMethod;
-import android.util.Log;
-import android.view.ContextThemeWrapper;
-import android.view.Gravity;
+import android.support.v4.content.res.ResourcesCompat;
+import android.text.Editable;
+import android.text.TextUtils;
+import android.text.TextWatcher;
 import android.view.LayoutInflater;
 import android.view.View;
-import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 import android.view.WindowManager;
-import android.webkit.WebView;
 import android.widget.AdapterView;
-import android.widget.ArrayAdapter;
-import android.widget.Button;
 import android.widget.CheckBox;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListAdapter;
 import android.widget.ListView;
 import android.widget.ProgressBar;
-import android.widget.RadioButton;
-import android.widget.RelativeLayout;
-import android.widget.ScrollView;
 import android.widget.TextView;
 
-import com.afollestad.materialdialogs.base.DialogBase;
+import com.afollestad.materialdialogs.internal.MDButton;
+import com.afollestad.materialdialogs.internal.MDRootLayout;
 import com.afollestad.materialdialogs.util.DialogUtils;
-import com.afollestad.materialdialogs.util.RecyclerUtil;
 import com.afollestad.materialdialogs.util.TypefaceHelper;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 /**
  * @author Aidan Follestad (afollestad)
  */
-public class MaterialDialog extends DialogBase implements View.OnClickListener {
+public class MaterialDialog extends DialogBase implements
+        View.OnClickListener, AdapterView.OnItemClickListener {
 
-    protected final View view;
+    protected final MDRootLayout view;
     protected final Builder mBuilder;
     protected ListView listView;
     protected ImageView icon;
@@ -70,35 +61,28 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
     protected FrameLayout customViewFrame;
     protected ProgressBar mProgress;
     protected TextView mProgressLabel;
+    protected TextView mProgressMinMax;
     protected TextView content;
+    protected EditText input;
 
-    protected View positiveButton;
-    protected View neutralButton;
-    protected View negativeButton;
-    protected boolean isStacked;
-    protected final int defaultItemColor;
+    protected MDButton positiveButton;
+    protected MDButton neutralButton;
+    protected MDButton negativeButton;
     protected ListType listType;
     protected List<Integer> selectedIndicesList;
 
-    private static ContextThemeWrapper getTheme(Builder builder) {
-        TypedArray a = builder.context.getTheme().obtainStyledAttributes(new int[]{R.attr.md_dark_theme});
-        boolean darkTheme = builder.theme == Theme.DARK;
-        if (!darkTheme) {
-            try {
-                darkTheme = a.getBoolean(0, false);
-                builder.theme = darkTheme ? Theme.DARK : Theme.LIGHT;
-            } finally {
-                a.recycle();
+    public final Builder getBuilder() {
+        return mBuilder;
             }
-        }
-        return new ContextThemeWrapper(builder.context, darkTheme ? R.style.MD_Dark : R.style.MD_Light);
-    }
 
     @SuppressLint("InflateParams")
     protected MaterialDialog(Builder builder) {
-        super(getTheme(builder));
+        super(builder.context, DialogInit.getTheme(builder));
         mBuilder = builder;
-
+        final LayoutInflater inflater = LayoutInflater.from(builder.context);
+        view = (MDRootLayout) inflater.inflate(DialogInit.getInflateLayout(builder), null);
+        DialogInit.init(this);
+/*
         if (!mBuilder.useCustomFonts) {
             if (mBuilder.mediumFont == null)
                 mBuilder.mediumFont = TypefaceHelper.get(getContext(), "NotoNaskhArabic-Bold");
@@ -106,575 +90,166 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
 //                mBuilder.regularFont = TypefaceHelper.get(getContext(), "Roboto-Regular");
                 mBuilder.regularFont = TypefaceHelper.get(getContext(), "NotoNaskhArabic-Regular");
         }
-
-        final LayoutInflater inflater = LayoutInflater.from(mBuilder.context);
-        this.view = inflater.inflate(R.layout.md_dialog, null);
-        this.setCancelable(builder.cancelable);
-
-        if (mBuilder.backgroundColor == 0)
-            mBuilder.backgroundColor = DialogUtils.resolveColor(mBuilder.context, R.attr.md_background_color);
-        if (mBuilder.backgroundColor != 0)
-            this.view.setBackgroundColor(mBuilder.backgroundColor);
-
-        mBuilder.positiveColor = DialogUtils.resolveColor(mBuilder.context, R.attr.md_positive_color, mBuilder.positiveColor);
-        mBuilder.neutralColor = DialogUtils.resolveColor(mBuilder.context, R.attr.md_neutral_color, mBuilder.neutralColor);
-        mBuilder.negativeColor = DialogUtils.resolveColor(mBuilder.context, R.attr.md_negative_color, mBuilder.negativeColor);
-
-        title = (TextView) view.findViewById(R.id.title);
-        icon = (ImageView) view.findViewById(R.id.icon);
-        titleFrame = view.findViewById(R.id.titleFrame);
-        content = (TextView) view.findViewById(R.id.content);
-
-        if (mBuilder.mIndeterminateProgress || mBuilder.mProgress > -2) {
-            mBuilder.customView = inflater.inflate(mBuilder.mIndeterminateProgress ? R.layout.md_progress_dialog_indeterminate
-                    : R.layout.md_progress_dialog, (ViewGroup) this.view, false);
-            mProgress = (ProgressBar) mBuilder.customView.findViewById(android.R.id.progress);
-            content = (TextView) mBuilder.customView.findViewById(android.R.id.message);
-
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
-                Drawable indDraw = mProgress.getIndeterminateDrawable();
-                if (indDraw != null) {
-                    indDraw.setColorFilter(mBuilder.accentColor, PorterDuff.Mode.SRC_ATOP);
-                    mProgress.setIndeterminateDrawable(indDraw);
+*/
+    public final void setTypeface(TextView target, Typeface t) {
+        if (t == null) return;
+        int flags = target.getPaintFlags() | Paint.SUBPIXEL_TEXT_FLAG;
+        target.setPaintFlags(flags);
+        target.setTypeface(t);
                 }
-                Drawable regDraw = mProgress.getProgressDrawable();
-                if (regDraw != null) {
-                    regDraw.setColorFilter(mBuilder.accentColor, PorterDuff.Mode.SRC_ATOP);
-                    mProgress.setProgressDrawable(regDraw);
-                }
-            }
 
-            if (!mBuilder.mIndeterminateProgress) {
-                mProgress.setProgress(0);
-                mProgress.setMax(mBuilder.mProgressMax);
-                mProgressLabel = (TextView) mBuilder.customView.findViewById(R.id.label);
-                mProgressLabel.setText("0%");
-            }
-            int bottomPadding = (int) getContext().getResources().getDimension(R.dimen.md_dialog_frame_margin);
-            int topPadding = builder.title == null ? bottomPadding
-                    : (int) getContext().getResources().getDimension(R.dimen.md_progressdialog_paddingwithtitle);
-            mBuilder.customView.setPadding(mBuilder.customView.getPaddingLeft(),
-                    topPadding,
-                    mBuilder.customView.getPaddingRight(),
-                    bottomPadding);
-        }
-
-        content.setText(builder.content);
-        content.setMovementMethod(new LinkMovementMethod());
-        setTypeface(content, mBuilder.regularFont);
-        content.setLineSpacing(0f, builder.contentLineSpacingMultiplier);
-        if (mBuilder.positiveColor == 0) {
-            content.setLinkTextColor(DialogUtils.resolveColor(getContext(), android.R.attr.textColorPrimary));
-        } else {
-            content.setLinkTextColor(mBuilder.positiveColor);
-        }
-
-        title.setGravity(gravityIntToGravity(builder.titleGravity));
-
-        if (builder.contentColorSet) {
-            content.setTextColor(builder.contentColor);
-        } else {
-            final int fallback = DialogUtils.resolveColor(getContext(), android.R.attr.textColorSecondary);
-            final int contentColor = DialogUtils.resolveColor(getContext(), R.attr.md_content_color, fallback);
-            content.setTextColor(contentColor);
-        }
-
-        if (builder.itemColorSet) {
-            defaultItemColor = builder.itemColor;
-        } else if (builder.theme == Theme.LIGHT) {
-            defaultItemColor = Color.BLACK;
-        } else {
-            defaultItemColor = Color.WHITE;
-        }
-
-        if (mBuilder.customView != null) {
-            invalidateCustomViewAssociations();
-            FrameLayout frame = (FrameLayout) view.findViewById(R.id.customViewFrame);
-            customViewFrame = frame;
-            View innerView = mBuilder.customView;
-
-            if (mBuilder.wrapCustomViewInScroll) {
-                /* Apply the frame padding to the content, this allows the ScrollView to draw it's
-                   overscroll glow without clipping */
-                final Resources r = getContext().getResources();
-                final int framePadding = r.getDimensionPixelSize(R.dimen.md_dialog_frame_margin);
-
-                final ScrollView sv = new ScrollView(getContext());
-                int paddingTop;
-                int paddingBottom;
-                if (titleFrame.getVisibility() != View.GONE)
-                    paddingTop = r.getDimensionPixelSize(R.dimen.md_content_vertical_padding);
-                else
-                    paddingTop = r.getDimensionPixelSize(R.dimen.md_dialog_frame_margin);
-
-                if (hasActionButtons())
-                    paddingBottom = r.getDimensionPixelSize(R.dimen.md_content_vertical_padding);
-                else
-                    paddingBottom = r.getDimensionPixelSize(R.dimen.md_dialog_frame_margin);
-
-                sv.setPadding(0, paddingTop, 0, paddingBottom);
-                sv.setClipToPadding(false);
-
-                innerView.setPadding(framePadding, 0, framePadding, 0);
-                sv.addView(innerView, new ScrollView.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT));
-                innerView = sv;
-            }
-
-            frame.addView(innerView, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT));
-        } else {
-            invalidateCustomViewAssociations();
-        }
-
-        if (mBuilder.listCallbackMulti != null)
-            selectedIndicesList = new ArrayList<>();
-
-        boolean adapterProvided = mBuilder.adapter != null;
-        if (mBuilder.items != null && mBuilder.items.length > 0 || adapterProvided) {
-            listView = (ListView) view.findViewById(R.id.contentListView);
-            listView.setSelector(getListSelector());
-
-            if (!adapterProvided) {
-                // Determine list type
-                if (mBuilder.listCallbackSingle != null) {
-                    listType = ListType.SINGLE;
-                } else if (mBuilder.listCallbackMulti != null) {
-                    listType = ListType.MULTI;
-                    if (mBuilder.selectedIndices != null) {
-                        selectedIndicesList = new ArrayList<>(Arrays.asList(mBuilder.selectedIndices));
-                    }
-                } else {
-                    listType = ListType.REGULAR;
-                }
-                mBuilder.adapter = new MaterialDialogAdapter(mBuilder.context,
-                        ListType.getLayoutForType(listType), R.id.title, mBuilder.items);
-            }
-        }
-
-        if (builder.icon != null) {
-            icon.setVisibility(View.VISIBLE);
-            icon.setImageDrawable(builder.icon);
-        } else {
-            Drawable d = DialogUtils.resolveDrawable(mBuilder.context, R.attr.md_icon);
-            if (d != null) {
-                icon.setVisibility(View.VISIBLE);
-                icon.setImageDrawable(d);
-            } else {
-                icon.setVisibility(View.GONE);
-            }
-        }
-
-        if (builder.title == null) {
-            titleFrame.setVisibility(View.GONE);
-        } else {
-            title.setText(builder.title);
-            setTypeface(title, mBuilder.mediumFont);
-            if (builder.titleColorSet) {
-                title.setTextColor(builder.titleColor);
-            } else {
-                final int fallback = DialogUtils.resolveColor(getContext(), android.R.attr.textColorPrimary);
-                title.setTextColor(DialogUtils.resolveColor(getContext(), R.attr.md_title_color, fallback));
-            }
-            content.setGravity(gravityIntToGravity(builder.contentGravity));
-        }
-
-        if (builder.showListener != null) {
-            setOnShowListener(builder.showListener);
-        }
-        if (builder.cancelListener != null) {
-            setOnCancelListener(builder.cancelListener);
-        }
-        if (builder.dismissListener != null) {
-            setOnDismissListener(builder.dismissListener);
-        }
-        if (builder.keyListener != null) {
-            setOnKeyListener(builder.keyListener);
-        }
-
-        updateFramePadding();
-        invalidateActions();
-        setOnShowListenerInternal();
-        setViewInternal(view);
-
-        view.getViewTreeObserver().addOnGlobalLayoutListener(
-                new ViewTreeObserver.OnGlobalLayoutListener() {
-                    @Override
-                    public void onGlobalLayout() {
-                        if (view.getMeasuredWidth() > 0) {
-                            invalidateCustomViewAssociations();
-                        }
-                    }
-                });
-
-        if (builder.theme == Theme.LIGHT && Build.VERSION.SDK_INT <= Build.VERSION_CODES.GINGERBREAD_MR1) {
-            setInverseBackgroundForced(true);
-            if (!builder.titleColorSet)
-                title.setTextColor(Color.BLACK);
-            if (!builder.contentColorSet)
-                content.setTextColor(Color.BLACK);
-        }
-    }
-
-    private static int gravityIntToGravity(GravityEnum gravity) {
-        switch (gravity) {
-            case CENTER:
-                return Gravity.CENTER_HORIZONTAL;
-            case END:
-                return Gravity.END;
-            default:
-                return Gravity.START;
-        }
-    }
-
-    @Override
-    public void onShow(DialogInterface dialog) {
-        super.onShow(dialog); // calls any external show listeners
-        checkIfStackingNeeded();
-        invalidateCustomViewAssociations();
-    }
-
-    /**
-     * To account for scrolling content and overscroll glows, the frame padding/margins sometimes
-     * must be set on inner views. This is dependent on the visibility of the title bar and action
-     * buttons. This method determines where the padding or margins are needed and applies them.
-     */
-    private void updateFramePadding() {
-        Resources r = getContext().getResources();
-        int framePadding = r.getDimensionPixelSize(R.dimen.md_dialog_frame_margin);
-
-        View contentScrollView = view.findViewById(R.id.contentScrollView);
-        int paddingTop = contentScrollView.getPaddingTop();
-        int paddingBottom = contentScrollView.getPaddingBottom();
-
-        if (!hasActionButtons())
-            paddingBottom = framePadding;
-        if (titleFrame.getVisibility() == View.GONE)
-            paddingTop = framePadding;
-
-        contentScrollView.setPadding(contentScrollView.getPaddingLeft(), paddingTop,
-                contentScrollView.getPaddingRight(), paddingBottom);
-
-        if (listView != null) {
-            // Padding below title is reduced for divider.
-            final int titlePaddingBottom = (int) mBuilder.context.getResources().getDimension(R.dimen.md_title_frame_margin_bottom_list);
-            titleFrame.setPadding(titleFrame.getPaddingLeft(),
-                    titleFrame.getPaddingTop(),
-                    titleFrame.getPaddingRight(),
-                    titlePaddingBottom);
-        }
-    }
-
-    /**
-     * Invalidates visibility of views for the presence of a custom view or list content
-     */
-    private void invalidateCustomViewAssociations() {
-        if (view.getMeasuredWidth() == 0) {
+    protected final void checkIfListInitScroll() {
+        if (listView == null)
             return;
-        }
-        View contentScrollView = view.findViewById(R.id.contentScrollView);
-        final int contentHorizontalPadding = (int) mBuilder.context.getResources()
-                .getDimension(R.dimen.md_dialog_frame_margin);
-        content.setPadding(contentHorizontalPadding, 0, contentHorizontalPadding, 0);
-
-        if (mBuilder.customView != null) {
-            contentScrollView.setVisibility(View.GONE);
-            customViewFrame.setVisibility(View.VISIBLE);
-            boolean topScroll = canViewOrChildScroll(customViewFrame.getChildAt(0), false);
-            boolean bottomScroll = canViewOrChildScroll(customViewFrame.getChildAt(0), true);
-            setDividerVisibility(topScroll, bottomScroll);
-        } else if ((mBuilder.items != null && mBuilder.items.length > 0) || mBuilder.adapter != null) {
-            contentScrollView.setVisibility(mBuilder.content != null
-                    && mBuilder.content.toString().trim().length() > 0 ? View.VISIBLE : View.GONE);
-            boolean canScroll = titleFrame.getVisibility() == View.VISIBLE &&
-                    (canListViewScroll() || canContentScroll());
-            setDividerVisibility(canScroll, canScroll);
+        listView.getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
+            @Override
+            public void onGlobalLayout() {
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN) {
+                    //noinspection deprecation
+                    listView.getViewTreeObserver().removeGlobalOnLayoutListener(this);
         } else {
-            contentScrollView.setVisibility(View.VISIBLE);
-            boolean canScroll = canContentScroll();
-            if (canScroll) {
-                final int contentVerticalPadding = (int) mBuilder.context.getResources()
-                        .getDimension(R.dimen.md_title_frame_margin_bottom);
-                content.setPadding(contentHorizontalPadding, contentVerticalPadding,
-                        contentHorizontalPadding, contentVerticalPadding);
-
-                // Same effect as when there's a ListView. Padding below title is reduced for divider.
-                final int titlePaddingBottom = (int) mBuilder.context.getResources().getDimension(R.dimen.md_title_frame_margin_bottom_list);
-                titleFrame.setPadding(titleFrame.getPaddingLeft(),
-                        titleFrame.getPaddingTop(),
-                        titleFrame.getPaddingRight(),
-                        titlePaddingBottom);
-            }
-            setDividerVisibility(canScroll, canScroll);
+                    listView.getViewTreeObserver().removeOnGlobalLayoutListener(this);
         }
+
+                if (listType == ListType.SINGLE || listType == ListType.MULTI) {
+                    int selectedIndex;
+                    if (listType == ListType.SINGLE) {
+                        if (mBuilder.selectedIndex < 0)
+                            return;
+                        selectedIndex = mBuilder.selectedIndex;
+        } else {
+                        if (mBuilder.selectedIndices == null || mBuilder.selectedIndices.length == 0)
+                            return;
+                        List<Integer> indicesList = Arrays.asList(mBuilder.selectedIndices);
+                        Collections.sort(indicesList);
+                        selectedIndex = indicesList.get(0);
+        }
+                    if (listView.getLastVisiblePosition() < selectedIndex) {
+                        final int totalVisible = listView.getLastVisiblePosition() - listView.getFirstVisiblePosition();
+                        // Scroll so that the selected index appears in the middle (vertically) of the ListView
+                        int scrollIndex = selectedIndex - (totalVisible / 2);
+                        if (scrollIndex < 0) scrollIndex = 0;
+                        final int fScrollIndex = scrollIndex;
+                        listView.post(new Runnable() {
+                    @Override
+                            public void run() {
+                                listView.requestFocus();
+                                listView.setSelection(fScrollIndex);
+                        }
+                });
+        }
+    }
+        }
+        });
     }
 
     /**
-     * Set the visibility of the bottom divider and adjusts the layout margin,
-     * when the divider is visible the button bar bottom margin (8dp from
-     * http://www.google.com/design/spec/components/dialogs.html#dialogs-specs )
-     * is removed as it makes the button bar look off balanced with different amounts of padding
-     * above and below the divider.
+     * Sets the dialog ListView's adapter and it's item click listener.
      */
-    private void setDividerVisibility(boolean topVisible, boolean bottomVisible) {
-        topVisible = topVisible && titleFrame.getVisibility() == View.VISIBLE;
-        bottomVisible = bottomVisible && hasActionButtons();
-
-        if (mBuilder.dividerColor == 0)
-            mBuilder.dividerColor = DialogUtils.resolveColor(mBuilder.context, R.attr.md_divider_color);
-        if (mBuilder.dividerColor == 0)
-            mBuilder.dividerColor = DialogUtils.resolveColor(getContext(), R.attr.md_divider);
-
-        View titleBarDivider = view.findViewById(R.id.titleBarDivider);
-        if (topVisible) {
-            titleBarDivider.setVisibility(View.VISIBLE);
-            titleBarDivider.setBackgroundColor(mBuilder.dividerColor);
-        } else {
-            titleBarDivider.setVisibility(View.GONE);
-        }
-
-        View buttonBarDivider = view.findViewById(R.id.buttonBarDivider);
-        if (bottomVisible) {
-            buttonBarDivider.setVisibility(View.VISIBLE);
-            buttonBarDivider.setBackgroundColor(mBuilder.dividerColor);
-            setVerticalMargins(view.findViewById(R.id.buttonStackedFrame), 0, 0);
-            setVerticalMargins(view.findViewById(R.id.buttonDefaultFrame), 0, 0);
-        } else {
-            Resources r = getContext().getResources();
-            buttonBarDivider.setVisibility(View.GONE);
-
-            final int bottomMargin = r.getDimensionPixelSize(R.dimen.md_button_frame_vertical_padding);
-
-            /* Only enable the bottom margin if our available window space can hold the margin,
-               we don't want to enable this and cause the content to scroll, which is bad
-               experience itself but it also causes a vibrating window as this will keep getting
-               enabled/disabled over and over again.
-             */
-            Rect maxWindowFrame = new Rect();
-            getWindow().getDecorView().getWindowVisibleDisplayFrame(maxWindowFrame);
-            int currentHeight = getWindow().getDecorView().getMeasuredHeight();
-            if (currentHeight + bottomMargin < maxWindowFrame.height()) {
-                setVerticalMargins(view.findViewById(R.id.buttonStackedFrame),
-                        bottomMargin, bottomMargin);
-                setVerticalMargins(view.findViewById(R.id.buttonDefaultFrame),
-                        bottomMargin, bottomMargin);
-            }
-        }
-    }
-
-    /**
-     * Constructs the dialog's list content and sets up click listeners.
-     */
-    private void invalidateList() {
+    protected final void invalidateList() {
         if ((mBuilder.items == null || mBuilder.items.length == 0) && mBuilder.adapter == null)
             return;
-
-        // Hide content
-        view.findViewById(R.id.contentScrollView).setVisibility(mBuilder.content != null
-                && mBuilder.content.toString().trim().length() > 0 ? View.VISIBLE : View.GONE);
-        view.findViewById(R.id.customViewFrame).setVisibility(View.GONE);
-
         // Set up list with adapter
-        FrameLayout listViewContainer = (FrameLayout) view.findViewById(R.id.contentListViewFrame);
-        listViewContainer.setVisibility(View.VISIBLE);
         listView.setAdapter(mBuilder.adapter);
+        if (listType != null || mBuilder.listCallbackCustom != null)
+            listView.setOnItemClickListener(this);
+    }
 
-        if (listType != null) {
-            // Only set listener for 1st-party adapter, leave custom adapter implementation to user with getListView()
-            listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
                 @Override
                 public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-
+        if (mBuilder.listCallbackCustom != null) {
+            // Custom adapter
+            CharSequence text = null;
+            if (view instanceof TextView)
+                text = ((TextView) view).getText();
+            mBuilder.listCallbackCustom.onSelection(this, view, position, text);
+        } else if (listType == null || listType == ListType.REGULAR) {
+            // Default adapter, non choice mode
+            if (mBuilder.autoDismiss) {
+                // If auto dismiss is enabled, dismiss the dialog when a list item is selected
+                dismiss();
+            }
+            mBuilder.listCallback.onSelection(this, view, position, mBuilder.items[position]);
+        } else {
+            // Default adapter, choice mode
                     if (listType == ListType.MULTI) {
-                        // Keep our selected items up to date
-                        boolean isChecked = !((CheckBox) view.findViewById(R.id.control)).isChecked();  // Inverted because the view's click listener is called before the check is toggled
-                        boolean previouslySelected = selectedIndicesList.contains(position);
-                        if (isChecked) {
-                            if (!previouslySelected) {
+                final boolean shouldBeChecked = !selectedIndicesList.contains(Integer.valueOf(position));
+                final CheckBox cb = (CheckBox) ((LinearLayout) view).getChildAt(0);
+                if (shouldBeChecked) {
+                    // Add the selection to the states first so the callback includes it (when alwaysCallMultiChoiceCallback)
                                 selectedIndicesList.add(position);
-                            }
-                        } else if (previouslySelected) {
+                    if (mBuilder.alwaysCallMultiChoiceCallback) {
+                        // If the checkbox wasn't previously selected, and the callback returns true, add it to the states and check it
+                        if (sendMultichoiceCallback()) {
+                            cb.setChecked(true);
+                        } else {
+                            // The callback cancelled selection, remove it from the states
                             selectedIndicesList.remove(Integer.valueOf(position));
+                            }
+                    } else {
+                        // The callback was not used to check if selection is allowed, just select it
+                        cb.setChecked(true);
+                    }
+                } else {
+                    // The checkbox was unchecked
+                            selectedIndicesList.remove(Integer.valueOf(position));
+                    cb.setChecked(false);
+                    if (mBuilder.alwaysCallMultiChoiceCallback)
+                        sendMultichoiceCallback();
                         }
                     } else if (listType == ListType.SINGLE) {
-                        // Keep our selected item up to date
-                        if (mBuilder.selectedIndex != position) {
+                boolean allowSelection = true;
+                if (mBuilder.autoDismiss && mBuilder.positiveText == null) {
+                    // If auto dismiss is enabled, and no action button is visible to approve the selection, dismiss the dialog
+                    dismiss();
+                    // Don't allow the selection to be updated since the dialog is being dismissed anyways
+                    allowSelection = false;
+                    // Update selected index and send callback
                             mBuilder.selectedIndex = position;
+                    sendSingleChoiceCallback(view);
+                } else if (mBuilder.alwaysCallSingleChoiceCallback) {
+                    int oldSelected = mBuilder.selectedIndex;
+                    // Temporarily set the new index so the callback uses the right one
+                    mBuilder.selectedIndex = position;
+                    // Only allow the radio button to be checked if the callback returns true
+                    allowSelection = sendSingleChoiceCallback(view);
+                    // Restore the old selected index, so the state is updated below
+                    mBuilder.selectedIndex = oldSelected;
+                }
+                // Update the checked states
+                if (allowSelection && mBuilder.selectedIndex != position) {
+                    mBuilder.selectedIndex = position;
                             ((MaterialDialogAdapter) mBuilder.adapter).notifyDataSetChanged();
                         }
                     }
 
-                    onClick(view);
                 }
-            });
         }
-
-    }
-
-    /**
-     * Find the view touching the bottom of this ViewGroup. Non visible children are ignored,
-     * however getChildDrawingOrder is not taking into account for simplicity and because it behaves
-     * inconsistently across platform versions.
-     *
-     * @return View touching the bottom of this viewgroup or null
-     */
-    @Nullable
-    private static View getBottomView(ViewGroup viewGroup) {
-        View bottomView = null;
-        for (int i = viewGroup.getChildCount() - 1; i >= 0; i--) {
-            View child = viewGroup.getChildAt(i);
-            if (child.getVisibility() == View.VISIBLE && child.getBottom() == viewGroup.getBottom()) {
-                bottomView = child;
-                break;
-            }
-        }
-        return bottomView;
-    }
-
-    @Nullable
-    private static View getTopView(ViewGroup viewGroup) {
-        View topView = null;
-        for (int i = viewGroup.getChildCount() - 1; i >= 0; i--) {
-            View child = viewGroup.getChildAt(i);
-            if (child.getVisibility() == View.VISIBLE && child.getTop() == viewGroup.getTop()) {
-                topView = child;
-                break;
-            }
-        }
-        return topView;
-    }
-
-    private static boolean canViewOrChildScroll(View view, boolean atBottom) {
-        if (view == null || !(view instanceof ViewGroup)) {
-            return false;
-        }
-            /* Is the bottom view something that scrolls? */
-        if (view instanceof ScrollView) {
-            ScrollView sv = (ScrollView) view;
-            if (sv.getChildCount() == 0)
-                return false;
-            final int childHeight = sv.getChildAt(0).getMeasuredHeight();
-            return sv.getMeasuredHeight() < childHeight;
-        } else if (view instanceof AdapterView) {
-            return canAdapterViewScroll((AdapterView) view);
-        } else if (view instanceof WebView) {
-            return canWebViewScroll((WebView) view);
-        } else if (isRecyclerView(view)) {
-            return RecyclerUtil.canRecyclerViewScroll(view);
-        } else {
-            if (atBottom) {
-                return canViewOrChildScroll(getBottomView((ViewGroup) view), true);
-            } else {
-                return canViewOrChildScroll(getTopView((ViewGroup) view), false);
-            }
-        }
-    }
-
-    private static boolean isRecyclerView(View view) {
-        boolean isRecyclerView = false;
-        try {
-            Class.forName("android.support.v7.widget.RecyclerView");
-
-            // We got here, so now we can safely check
-            isRecyclerView = RecyclerUtil.isRecyclerView(view);
-        } catch (ClassNotFoundException ignored) {
-        }
-
-        return isRecyclerView;
-    }
-
-    private static boolean canWebViewScroll(WebView view) {
-        return view.getMeasuredHeight() > view.getContentHeight();
-    }
-
-    private static boolean canAdapterViewScroll(AdapterView lv) {
-        /* Force it to layout it's children */
-        if (lv.getLastVisiblePosition() == -1)
-            return false;
-
-        /* We can scroll if the first or last item is not visible */
-        boolean firstItemVisible = lv.getFirstVisiblePosition() == 0;
-        boolean lastItemVisible = lv.getLastVisiblePosition() == lv.getCount() - 1;
-
-        if (firstItemVisible && lastItemVisible) {
-            /* Or the first item's top is above or own top */
-            if (lv.getChildAt(0).getTop() < lv.getPaddingTop())
-                return true;
-
-            /* or the last item's bottom is beyond our own bottom */
-            return lv.getChildAt(lv.getChildCount() - 1).getBottom() >
-                    lv.getHeight() - lv.getPaddingBottom();
-        }
-
-        return true;
-    }
-
-    private boolean canListViewScroll() {
-        return canAdapterViewScroll(listView);
-    }
-
 
     public static class NotImplementedException extends Error {
-        public NotImplementedException(String message) {
+        public NotImplementedException(@SuppressWarnings("SameParameterValue") String message) {
             super(message);
         }
     }
 
     public static class DialogException extends WindowManager.BadTokenException {
-        public DialogException(String message) {
+        public DialogException(@SuppressWarnings("SameParameterValue") String message) {
             super(message);
         }
     }
 
-    /**
-     * Detects whether or not the content TextView can be scrolled.
-     */
-    private boolean canContentScroll() {
-        final ScrollView scrollView = (ScrollView) view.findViewById(R.id.contentScrollView);
-        final int childHeight = content.getMeasuredHeight();
-        return scrollView.getMeasuredHeight() < childHeight;
-    }
-
-    /**
-     * Measures the action button's and their text to decide whether or not the button should be stacked.
-     */
-    private void checkIfStackingNeeded() {
-        if (numberOfActionButtons() <= 1) {
-            return;
-        } else if (mBuilder.forceStacking) {
-            isStacked = true;
-            invalidateActions();
-            return;
-        }
-        isStacked = false;
-        int buttonsWidth = 0;
-
-        positiveButton.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
-        neutralButton.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
-        negativeButton.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
-
-        if (mBuilder.positiveText != null) buttonsWidth += positiveButton.getMeasuredWidth();
-        if (mBuilder.neutralText != null) buttonsWidth += neutralButton.getMeasuredWidth();
-        if (mBuilder.negativeText != null) buttonsWidth += negativeButton.getMeasuredWidth();
-
-        final int buttonFrameWidth = view.findViewById(R.id.buttonDefaultFrame).getWidth();
-        isStacked = buttonsWidth > buttonFrameWidth;
-        invalidateActions();
-    }
-
-    private Drawable getListSelector() {
+    protected final Drawable getListSelector() {
         if (mBuilder.listSelector != 0)
-            return mBuilder.context.getResources().getDrawable(mBuilder.listSelector);
+            return ResourcesCompat.getDrawable(mBuilder.context.getResources(), mBuilder.listSelector, null);
         final Drawable d = DialogUtils.resolveDrawable(mBuilder.context, R.attr.md_list_selector);
         if (d != null) return d;
         return DialogUtils.resolveDrawable(getContext(), R.attr.md_list_selector);
     }
 
-    private Drawable getButtonSelector(DialogAction which) {
+    /* package */ Drawable getButtonSelector(DialogAction which, boolean isStacked) {
         if (isStacked) {
             if (mBuilder.btnSelectorStacked != 0)
-                return mBuilder.context.getResources().getDrawable(mBuilder.btnSelectorStacked);
+                return ResourcesCompat.getDrawable(mBuilder.context.getResources(), mBuilder.btnSelectorStacked, null);
             final Drawable d = DialogUtils.resolveDrawable(mBuilder.context, R.attr.md_btn_stacked_selector);
             if (d != null) return d;
             return DialogUtils.resolveDrawable(getContext(), R.attr.md_btn_stacked_selector);
@@ -682,21 +257,21 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
             switch (which) {
                 default: {
                     if (mBuilder.btnSelectorPositive != 0)
-                        return mBuilder.context.getResources().getDrawable(mBuilder.btnSelectorPositive);
+                        return ResourcesCompat.getDrawable(mBuilder.context.getResources(), mBuilder.btnSelectorPositive, null);
                     final Drawable d = DialogUtils.resolveDrawable(mBuilder.context, R.attr.md_btn_positive_selector);
                     if (d != null) return d;
                     return DialogUtils.resolveDrawable(getContext(), R.attr.md_btn_positive_selector);
                 }
                 case NEUTRAL: {
                     if (mBuilder.btnSelectorNeutral != 0)
-                        return mBuilder.context.getResources().getDrawable(mBuilder.btnSelectorNeutral);
+                        return ResourcesCompat.getDrawable(mBuilder.context.getResources(), mBuilder.btnSelectorNeutral, null);
                     final Drawable d = DialogUtils.resolveDrawable(mBuilder.context, R.attr.md_btn_neutral_selector);
                     if (d != null) return d;
                     return DialogUtils.resolveDrawable(getContext(), R.attr.md_btn_neutral_selector);
                 }
                 case NEGATIVE: {
                     if (mBuilder.btnSelectorNegative != 0)
-                        return mBuilder.context.getResources().getDrawable(mBuilder.btnSelectorNegative);
+                        return ResourcesCompat.getDrawable(mBuilder.context.getResources(), mBuilder.btnSelectorNegative, null);
                     final Drawable d = DialogUtils.resolveDrawable(mBuilder.context, R.attr.md_btn_negative_selector);
                     if (d != null) return d;
                     return DialogUtils.resolveDrawable(getContext(), R.attr.md_btn_negative_selector);
@@ -705,129 +280,38 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
         }
     }
 
-    /**
-     * Invalidates the positive/neutral/negative action buttons. Decides whether they should be visible
-     * and sets their properties (such as height, text color, etc.).
-     */
-    private boolean invalidateActions() {
-        if (!hasActionButtons()) {
-            // If the dialog is a plain list dialog, no buttons are shown.
-            view.findViewById(R.id.buttonDefaultFrame).setVisibility(View.GONE);
-            view.findViewById(R.id.buttonStackedFrame).setVisibility(View.GONE);
-            invalidateList();
-            return false;
-        }
-
-        if (isStacked) {
-            view.findViewById(R.id.buttonDefaultFrame).setVisibility(View.GONE);
-            view.findViewById(R.id.buttonStackedFrame).setVisibility(View.VISIBLE);
-        } else {
-            view.findViewById(R.id.buttonDefaultFrame).setVisibility(View.VISIBLE);
-            view.findViewById(R.id.buttonStackedFrame).setVisibility(View.GONE);
-        }
-
-        positiveButton = view.findViewById(
-                isStacked ? R.id.buttonStackedPositive : R.id.buttonDefaultPositive);
-        if (mBuilder.positiveText != null) {
-            TextView positiveTextView = (TextView) ((FrameLayout) positiveButton).getChildAt(0);
-            setTypeface(positiveTextView, mBuilder.mediumFont);
-            positiveTextView.setText(mBuilder.positiveText);
-            positiveTextView.setTextColor(getActionTextStateList(mBuilder.positiveColor));
-            setBackgroundCompat(positiveButton, getButtonSelector(DialogAction.POSITIVE));
-            positiveButton.setTag(POSITIVE);
-            positiveButton.setOnClickListener(this);
-            if (isStacked)
-                positiveTextView.setGravity(gravityIntToGravity(mBuilder.btnStackedGravity));
-        } else {
-            positiveButton.setVisibility(View.GONE);
-        }
-
-        neutralButton = view.findViewById(
-                isStacked ? R.id.buttonStackedNeutral : R.id.buttonDefaultNeutral);
-        if (mBuilder.neutralText != null) {
-            TextView neutralTextView = (TextView) ((FrameLayout) neutralButton).getChildAt(0);
-            setTypeface(neutralTextView, mBuilder.mediumFont);
-            neutralButton.setVisibility(View.VISIBLE);
-            neutralTextView.setTextColor(getActionTextStateList(mBuilder.neutralColor));
-            setBackgroundCompat(neutralButton, getButtonSelector(DialogAction.NEUTRAL));
-            neutralTextView.setText(mBuilder.neutralText);
-            neutralButton.setTag(NEUTRAL);
-            neutralButton.setOnClickListener(this);
-            if (isStacked)
-                neutralTextView.setGravity(gravityIntToGravity(mBuilder.btnStackedGravity));
-        } else {
-            neutralButton.setVisibility(View.GONE);
-        }
-
-        negativeButton = view.findViewById(
-                isStacked ? R.id.buttonStackedNegative : R.id.buttonDefaultNegative);
-        if (mBuilder.negativeText != null) {
-            TextView negativeTextView = (TextView) ((FrameLayout) negativeButton).getChildAt(0);
-            setTypeface(negativeTextView, mBuilder.mediumFont);
-            negativeButton.setVisibility(View.VISIBLE);
-            negativeTextView.setTextColor(getActionTextStateList(mBuilder.negativeColor));
-            setBackgroundCompat(negativeButton, getButtonSelector(DialogAction.NEGATIVE));
-            negativeTextView.setText(mBuilder.negativeText);
-            negativeButton.setTag(NEGATIVE);
-            negativeButton.setOnClickListener(this);
-
-            if (!isStacked) {
-                RelativeLayout.LayoutParams params = new RelativeLayout.LayoutParams(
-                        RelativeLayout.LayoutParams.WRAP_CONTENT, (int) getContext().getResources().getDimension(R.dimen.md_button_height));
-                if (mBuilder.positiveText != null) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
-                        params.addRule(RelativeLayout.START_OF, R.id.buttonDefaultPositive);
-                    } else {
-                        params.addRule(RelativeLayout.LEFT_OF, R.id.buttonDefaultPositive);
-                    }
-                } else {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
-                        params.addRule(RelativeLayout.ALIGN_PARENT_END);
-                    } else {
-                        params.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
-                    }
-                }
-                negativeButton.setLayoutParams(params);
-            } else {
-                negativeTextView.setGravity(gravityIntToGravity(mBuilder.btnStackedGravity));
-            }
-        } else {
-            negativeButton.setVisibility(View.GONE);
-        }
-
-        invalidateList();
-        return true;
-    }
-
-    private void sendSingleChoiceCallback(View v) {
+    private boolean sendSingleChoiceCallback(View v) {
         CharSequence text = null;
         if (mBuilder.selectedIndex >= 0) {
             text = mBuilder.items[mBuilder.selectedIndex];
         }
-        mBuilder.listCallbackSingle.onSelection(this, v, mBuilder.selectedIndex, text);
+        return mBuilder.listCallbackSingleChoice.onSelection(this, v, mBuilder.selectedIndex, text);
     }
 
-    private void sendMultichoiceCallback() {
+    private boolean sendMultichoiceCallback() {
+        Collections.sort(selectedIndicesList); // make sure the indicies are in order
         List<CharSequence> selectedTitles = new ArrayList<>();
         for (Integer i : selectedIndicesList) {
             selectedTitles.add(mBuilder.items[i]);
         }
-        mBuilder.listCallbackMulti.onSelection(this,
+        return mBuilder.listCallbackMultiChoice.onSelection(this,
                 selectedIndicesList.toArray(new Integer[selectedIndicesList.size()]),
                 selectedTitles.toArray(new CharSequence[selectedTitles.size()]));
     }
 
     @Override
     public final void onClick(View v) {
-        String tag = (String) v.getTag();
+        DialogAction tag = (DialogAction) v.getTag();
         switch (tag) {
             case POSITIVE: {
                 if (mBuilder.callback != null)
                     mBuilder.callback.onPositive(this);
-                if (mBuilder.listCallbackSingle != null)
+                if (mBuilder.listCallbackSingleChoice != null)
                     sendSingleChoiceCallback(v);
-                if (mBuilder.listCallbackMulti != null)
+                if (mBuilder.listCallbackMultiChoice != null)
                     sendMultichoiceCallback();
+                if (mBuilder.inputCallback != null && input != null && !mBuilder.alwaysCallInputCallback)
+                    mBuilder.inputCallback.onInput(this, input.getText());
                 if (mBuilder.autoDismiss) dismiss();
                 break;
             }
@@ -843,34 +327,8 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
                 if (mBuilder.autoDismiss) dismiss();
                 break;
             }
-            default: {
-                String[] split = tag.split(":");
-                int index = Integer.parseInt(split[0]);
-                if (mBuilder.listCallback != null) {
-                    if (mBuilder.autoDismiss)
-                        dismiss();
-                    mBuilder.listCallback.onSelection(this, v, index, split[1]);
-                } else if (mBuilder.listCallbackSingle != null) {
-                    RadioButton cb = (RadioButton) ((LinearLayout) v).getChildAt(0);
-                    if (!cb.isChecked())
-                        cb.setChecked(true);
-                    if (mBuilder.autoDismiss && mBuilder.positiveText == null) {
-                        dismiss();
-                        sendSingleChoiceCallback(v);
-                    } else if (mBuilder.alwaysCallSingleChoiceCallback) {
-                        sendSingleChoiceCallback(v);
                     }
-                } else if (mBuilder.listCallbackMulti != null) {
-                    CheckBox cb = (CheckBox) ((LinearLayout) v).getChildAt(0);
-                    cb.setChecked(!cb.isChecked());
-                    if (mBuilder.alwaysCallMultiChoiceCallback) {
-                        sendMultichoiceCallback();
                     }
-                } else if (mBuilder.autoDismiss) dismiss();
-                break;
-            }
-        }
-    }
 
     /**
      * The class used to construct a MaterialDialog.
@@ -882,6 +340,8 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
         protected GravityEnum titleGravity = GravityEnum.START;
         protected GravityEnum contentGravity = GravityEnum.START;
         protected GravityEnum btnStackedGravity = GravityEnum.END;
+        protected GravityEnum itemsGravity = GravityEnum.START;
+        protected GravityEnum buttonsGravity = GravityEnum.START;
         protected int titleColor = -1;
         protected int contentColor = -1;
         protected CharSequence content;
@@ -890,19 +350,20 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
         protected CharSequence neutralText;
         protected CharSequence negativeText;
         protected View customView;
-        protected int accentColor;
+        protected int widgetColor;
         protected int positiveColor;
         protected int negativeColor;
         protected int neutralColor;
         protected ButtonCallback callback;
         protected ListCallback listCallback;
-        protected ListCallback listCallbackSingle;
-        protected ListCallbackMulti listCallbackMulti;
+        protected ListCallbackSingleChoice listCallbackSingleChoice;
+        protected ListCallbackMultiChoice listCallbackMultiChoice;
+        protected ListCallback listCallbackCustom;
         protected boolean alwaysCallMultiChoiceCallback = false;
         protected boolean alwaysCallSingleChoiceCallback = false;
         protected Theme theme = Theme.LIGHT;
         protected boolean cancelable = true;
-        protected float contentLineSpacingMultiplier = 1.3f;
+        protected float contentLineSpacingMultiplier = 1.2f;
         protected int selectedIndex = -1;
         protected Integer[] selectedIndices = null;
         protected boolean autoDismiss = true;
@@ -910,6 +371,8 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
         protected Typeface mediumFont;
         protected boolean useCustomFonts;
         protected Drawable icon;
+        protected boolean limitIconToDefaultSize;
+        protected int maxIconSize = -1;
         protected ListAdapter adapter;
         protected OnDismissListener dismissListener;
         protected OnCancelListener cancelListener;
@@ -920,15 +383,20 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
         protected int dividerColor;
         protected int backgroundColor;
         protected int itemColor;
-        protected boolean mIndeterminateProgress;
-        protected int mProgress = -2;
-        protected int mProgressMax = 0;
+        protected boolean indeterminateProgress;
+        protected boolean showMinMax;
+        protected int progress = -2;
+        protected int progressMax = 0;
+        protected CharSequence inputPrefill;
+        protected CharSequence inputHint;
+        protected InputCallback inputCallback;
+        protected boolean inputAllowEmpty;
+        protected int inputType = -1;
+        protected boolean alwaysCallInputCallback;
 
-        // Since 0 is black and -1 is white, no default value is good for indicating if a color was set.
-        // So this is a decent solution to this problem.
-        protected boolean titleColorSet;
-        protected boolean contentColorSet;
-        protected boolean itemColorSet;
+        protected boolean titleColorSet = false;
+        protected boolean contentColorSet = false;
+        protected boolean itemColorSet = false;
 
         @DrawableRes
         protected int listSelector;
@@ -941,47 +409,56 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
         @DrawableRes
         protected int btnSelectorNegative;
 
+        public final Context getContext() {
+            return context;
+        }
+
+        public final GravityEnum getItemsGravity() {
+            return itemsGravity;
+        }
+
+        public final int getTitleColor() {
+            return titleColor;
+        }
+
+        public final Typeface getRegularFont() {
+            return regularFont;
+        }
+
         public Builder(@NonNull Context context) {
             this.context = context;
             final int materialBlue = context.getResources().getColor(R.color.md_material_blue_600);
+
+            // Retrieve default accent colors, which are used on the action buttons and progress bars
+            this.widgetColor = DialogUtils.resolveColor(context, R.attr.colorAccent, materialBlue);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                TypedArray a = context.getTheme().obtainStyledAttributes(new int[]{android.R.attr.colorAccent});
-                try {
-                    this.accentColor = a.getColor(0, materialBlue);
-                    this.positiveColor = this.accentColor;
-                    this.negativeColor = this.accentColor;
-                    this.neutralColor = this.accentColor;
-                } catch (Exception e) {
-                    this.accentColor = materialBlue;
-                    this.positiveColor = materialBlue;
-                    this.negativeColor = materialBlue;
-                    this.neutralColor = materialBlue;
-                } finally {
-                    a.recycle();
+                this.widgetColor = DialogUtils.resolveColor(context, android.R.attr.colorAccent, this.widgetColor);
                 }
-            } else {
-                TypedArray a = context.getTheme().obtainStyledAttributes(new int[]{R.attr.colorAccent});
-                try {
-                    this.accentColor = a.getColor(0, materialBlue);
-                    this.positiveColor = this.accentColor;
-                    this.negativeColor = this.accentColor;
-                    this.neutralColor = this.accentColor;
-                } catch (Exception e) {
-                    this.accentColor = materialBlue;
-                    this.positiveColor = materialBlue;
-                    this.negativeColor = materialBlue;
-                    this.neutralColor = materialBlue;
-                } finally {
-                    a.recycle();
-                }
-            }
+
+            this.positiveColor = this.widgetColor;
+            this.negativeColor = this.widgetColor;
+            this.neutralColor = this.widgetColor;
+
+            // Set the default theme based on the Activity theme's primary color darkness (more white or more black)
+            final int primaryTextColor = DialogUtils.resolveColor(context, android.R.attr.textColorPrimary);
+            this.theme = DialogUtils.isColorDark(primaryTextColor) ? Theme.LIGHT : Theme.DARK;
+
+            // Load theme values from the ThemeSingleton if needed
             checkSingleton();
+
+            // Retrieve gravity settings from global theme attributes if needed
+            this.titleGravity = DialogUtils.resolveGravityEnum(context, R.attr.md_title_gravity, this.titleGravity);
+            this.contentGravity = DialogUtils.resolveGravityEnum(context, R.attr.md_content_gravity, this.contentGravity);
+            this.btnStackedGravity = DialogUtils.resolveGravityEnum(context, R.attr.md_btnstacked_gravity, this.btnStackedGravity);
+            this.itemsGravity = DialogUtils.resolveGravityEnum(context, R.attr.md_items_gravity, this.itemsGravity);
+            this.buttonsGravity = DialogUtils.resolveGravityEnum(context, R.attr.md_buttons_gravity, this.buttonsGravity);
         }
 
         private void checkSingleton() {
             if (ThemeSingleton.get(false) == null) return;
             ThemeSingleton s = ThemeSingleton.get();
-            theme(s.darkTheme ? Theme.DARK : Theme.LIGHT);
+            if (s.darkTheme)
+                this.theme = Theme.DARK;
             if (s.titleColor != 0)
                 this.titleColor = s.titleColor;
             if (s.contentColor != 0)
@@ -1010,10 +487,17 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
                 this.btnSelectorNeutral = s.btnSelectorNeutral;
             if (s.btnSelectorNegative != 0)
                 this.btnSelectorNegative = s.btnSelectorNegative;
+            if (s.widgetColor != 0)
+                this.widgetColor = s.widgetColor;
+            this.titleGravity = s.titleGravity;
+            this.contentGravity = s.contentGravity;
+            this.btnStackedGravity = s.btnStackedGravity;
+            this.itemsGravity = s.itemsGravity;
+            this.buttonsGravity = s.buttonsGravity;
         }
 
         public Builder title(@StringRes int titleRes) {
-            title(this.context.getString(titleRes));
+            title(this.context.getText(titleRes));
             return this;
         }
 
@@ -1078,11 +562,17 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
          * @return The Builder instance so you can chain calls to it.
          */
         public Builder typeface(String medium, String regular) {
-            if (medium != null)
+            if (medium != null) {
                 this.mediumFont = TypefaceHelper.get(this.context, medium);
-            if (regular != null)
+                if (this.mediumFont == null)
+                    throw new RuntimeException("No font asset found for " + medium);
+            }
+            if (regular != null) {
                 this.regularFont = TypefaceHelper.get(this.context, regular);
-            this.useCustomFonts = true;
+                if (this.regularFont == null)
+                    throw new RuntimeException("No font asset found for " + regular);
+            }
+            this.useCustomFonts = this.mediumFont != null || this.regularFont != null;
             return this;
         }
 
@@ -1092,12 +582,27 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
         }
 
         public Builder iconRes(@DrawableRes int icon) {
-            this.icon = context.getResources().getDrawable(icon);
+            this.icon = ResourcesCompat.getDrawable(context.getResources(), icon, null);
             return this;
         }
 
         public Builder iconAttr(@AttrRes int iconAttr) {
             this.icon = DialogUtils.resolveDrawable(context, iconAttr);
+            return this;
+        }
+
+        public Builder content(@StringRes int contentRes) {
+            content(this.context.getText(contentRes));
+            return this;
+        }
+
+        public Builder content(@NonNull CharSequence content) {
+            this.content = content;
+            return this;
+        }
+
+        public Builder content(@StringRes int contentRes, Object... formatArgs) {
+            content(this.context.getString(contentRes, formatArgs));
             return this;
         }
 
@@ -1114,21 +619,6 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
 
         public Builder contentColorAttr(@AttrRes int colorAttr) {
             contentColor(DialogUtils.resolveColor(this.context, colorAttr));
-            return this;
-        }
-
-        public Builder content(@StringRes int contentRes) {
-            content(this.context.getString(contentRes));
-            return this;
-        }
-
-        public Builder content(CharSequence content) {
-            this.content = content;
-            return this;
-        }
-
-        public Builder content(@StringRes int contentRes, Object... formatArgs) {
-            content(this.context.getString(contentRes, formatArgs));
             return this;
         }
 
@@ -1154,8 +644,32 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
 
         public Builder itemsCallback(@NonNull ListCallback callback) {
             this.listCallback = callback;
-            this.listCallbackSingle = null;
-            this.listCallbackMulti = null;
+            this.listCallbackSingleChoice = null;
+            this.listCallbackMultiChoice = null;
+            return this;
+        }
+
+        public Builder itemColor(int color) {
+            this.itemColor = color;
+            this.itemColorSet = true;
+            return this;
+        }
+
+        public Builder itemColorRes(@ColorRes int colorRes) {
+            return itemColor(this.context.getResources().getColor(colorRes));
+        }
+
+        public Builder itemColorAttr(@AttrRes int colorAttr) {
+            return itemColor(DialogUtils.resolveColor(this.context, colorAttr));
+        }
+
+        public Builder itemsGravity(@NonNull GravityEnum gravity) {
+            this.itemsGravity = gravity;
+            return this;
+        }
+
+        public Builder buttonsGravity(@NonNull GravityEnum gravity) {
+            this.buttonsGravity = gravity;
             return this;
         }
 
@@ -1167,11 +681,11 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
          * @param callback      The callback that will be called when the presses the positive button.
          * @return The Builder instance so you can chain calls to it.
          */
-        public Builder itemsCallbackSingleChoice(int selectedIndex, @NonNull ListCallback callback) {
+        public Builder itemsCallbackSingleChoice(int selectedIndex, @NonNull ListCallbackSingleChoice callback) {
             this.selectedIndex = selectedIndex;
             this.listCallback = null;
-            this.listCallbackSingle = callback;
-            this.listCallbackMulti = null;
+            this.listCallbackSingleChoice = callback;
+            this.listCallbackMultiChoice = null;
             return this;
         }
 
@@ -1195,11 +709,11 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
          * @param callback        The callback that will be called when the presses the positive button.
          * @return The Builder instance so you can chain calls to it.
          */
-        public Builder itemsCallbackMultiChoice(Integer[] selectedIndices, @NonNull ListCallbackMulti callback) {
+        public Builder itemsCallbackMultiChoice(Integer[] selectedIndices, @NonNull ListCallbackMultiChoice callback) {
             this.selectedIndices = selectedIndices;
             this.listCallback = null;
-            this.listCallbackSingle = null;
-            this.listCallbackMulti = callback;
+            this.listCallbackSingleChoice = null;
+            this.listCallbackMultiChoice = callback;
             return this;
         }
 
@@ -1216,7 +730,7 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
         }
 
         public Builder positiveText(@StringRes int postiveRes) {
-            positiveText(this.context.getString(postiveRes));
+            positiveText(this.context.getText(postiveRes));
             return this;
         }
 
@@ -1225,8 +739,21 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
             return this;
         }
 
+        public Builder positiveColor(int color) {
+            this.positiveColor = color;
+            return this;
+        }
+
+        public Builder positiveColorRes(@ColorRes int colorRes) {
+            return positiveColor(this.context.getResources().getColor(colorRes));
+        }
+
+        public Builder positiveColorAttr(@AttrRes int colorAttr) {
+            return positiveColor(DialogUtils.resolveColor(this.context, colorAttr));
+        }
+
         public Builder neutralText(@StringRes int neutralRes) {
-            return neutralText(this.context.getString(neutralRes));
+            return neutralText(this.context.getText(neutralRes));
         }
 
         public Builder neutralText(@NonNull CharSequence message) {
@@ -1234,13 +761,39 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
             return this;
         }
 
+        public Builder negativeColor(int color) {
+            this.negativeColor = color;
+            return this;
+        }
+
+        public Builder negativeColorRes(@ColorRes int colorRes) {
+            return negativeColor(this.context.getResources().getColor(colorRes));
+        }
+
+        public Builder negativeColorAttr(@AttrRes int colorAttr) {
+            return negativeColor(DialogUtils.resolveColor(this.context, colorAttr));
+        }
+
         public Builder negativeText(@StringRes int negativeRes) {
-            return negativeText(this.context.getString(negativeRes));
+            return negativeText(this.context.getText(negativeRes));
         }
 
         public Builder negativeText(@NonNull CharSequence message) {
             this.negativeText = message;
             return this;
+        }
+
+        public Builder neutralColor(int color) {
+            this.neutralColor = color;
+            return this;
+        }
+
+        public Builder neutralColorRes(@ColorRes int colorRes) {
+            return neutralColor(this.context.getResources().getColor(colorRes));
+        }
+
+        public Builder neutralColorAttr(@AttrRes int colorAttr) {
+            return neutralColor(DialogUtils.resolveColor(this.context, colorAttr));
         }
 
         public Builder listSelector(@DrawableRes int selectorRes) {
@@ -1286,25 +839,9 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
             return this;
         }
 
-        /**
-         * Use {@link #customView(int, boolean)} instead.
-         */
-        @Deprecated
-        public Builder customView(@LayoutRes int layoutRes) {
-            return customView(layoutRes, true);
-        }
-
         public Builder customView(@LayoutRes int layoutRes, boolean wrapInScrollView) {
             LayoutInflater li = LayoutInflater.from(this.context);
             return customView(li.inflate(layoutRes, null), wrapInScrollView);
-        }
-
-        /**
-         * Use {@link #customView(android.view.View, boolean)} instead.
-         */
-        @Deprecated
-        public Builder customView(@NonNull View view) {
-            return customView(view, true);
         }
 
         public Builder customView(@NonNull View view, boolean wrapInScrollView) {
@@ -1322,57 +859,40 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
          */
         public Builder progress(boolean indeterminate, int max) {
             if (indeterminate) {
-                this.mIndeterminateProgress = true;
-                this.mProgress = -2;
+                this.indeterminateProgress = true;
+                this.progress = -2;
             } else {
-                this.mIndeterminateProgress = false;
-                this.mProgress = -1;
-                this.mProgressMax = max;
+                this.indeterminateProgress = false;
+                this.progress = -1;
+                this.progressMax = max;
             }
             return this;
         }
 
-        public Builder positiveColor(int color) {
-            this.positiveColor = color;
+        /**
+         * Makes this dialog a progress dialog.
+         *
+         * @param indeterminate If true, an infinite circular spinner is shown. If false, a horizontal progress bar is shown that is incremented or set via the built MaterialDialog instance.
+         * @param max           When indeterminate is false, the max value the horizontal progress bar can get to.
+         * @param showMinMax    For determinate dialogs, the min and max will be displayed to the left (start) of the progress bar, e.g. 50/100.
+         * @return An instance of the Builder so calls can be chained.
+         */
+        public Builder progress(boolean indeterminate, int max, boolean showMinMax) {
+            this.showMinMax = showMinMax;
+            return progress(indeterminate, max);
+        }
+
+        public Builder widgetColor(int color) {
+            this.widgetColor = color;
             return this;
         }
 
-        public Builder positiveColorRes(@ColorRes int colorRes) {
-            positiveColor(this.context.getResources().getColor(colorRes));
-            return this;
+        public Builder widgetColorRes(@ColorRes int colorRes) {
+            return widgetColor(this.context.getResources().getColor(colorRes));
         }
 
-        public Builder positiveColorAttr(@AttrRes int colorAttr) {
-            positiveColor(DialogUtils.resolveColor(this.context, colorAttr));
-            return this;
-        }
-
-        public Builder negativeColor(int color) {
-            this.negativeColor = color;
-            return this;
-        }
-
-        public Builder negativeColorRes(@ColorRes int colorRes) {
-            negativeColor(this.context.getResources().getColor(colorRes));
-            return this;
-        }
-
-        public Builder negativeColorAttr(@AttrRes int colorAttr) {
-            negativeColor(DialogUtils.resolveColor(this.context, colorAttr));
-            return this;
-        }
-
-        public Builder neutralColor(int color) {
-            this.neutralColor = color;
-            return this;
-        }
-
-        public Builder neutralColorRes(@ColorRes int colorRes) {
-            return neutralColor(this.context.getResources().getColor(colorRes));
-        }
-
-        public Builder neutralColorAttr(@AttrRes int colorAttr) {
-            return neutralColor(DialogUtils.resolveColor(this.context, colorAttr));
+        public Builder widgetColorAttr(@AttrRes int colorAttr) {
+            return widgetColorRes(DialogUtils.resolveColor(this.context, colorAttr));
         }
 
         public Builder dividerColor(int color) {
@@ -1399,20 +919,6 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
 
         public Builder backgroundColorAttr(@AttrRes int colorAttr) {
             return backgroundColor(DialogUtils.resolveColor(this.context, colorAttr));
-        }
-
-        public Builder itemColor(int color) {
-            this.itemColor = color;
-            this.itemColorSet = true;
-            return this;
-        }
-
-        public Builder itemColorRes(@ColorRes int colorRes) {
-            return itemColor(this.context.getResources().getColor(colorRes));
-        }
-
-        public Builder itemColorAttr(@AttrRes int colorAttr) {
-            return itemColor(DialogUtils.resolveColor(this.context, colorAttr));
         }
 
         public Builder callback(@NonNull ButtonCallback callback) {
@@ -1446,11 +952,31 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
         /**
          * Sets a custom {@link android.widget.ListAdapter} for the dialog's list
          *
+         * @param adapter  The adapter to set to the list.
+         * @param callback The callback invoked when an item in the list is selected.
          * @return This Builder object to allow for chaining of calls to set methods
          */
-        public Builder adapter(@NonNull ListAdapter adapter) {
+        public Builder adapter(@NonNull ListAdapter adapter, ListCallback callback) {
             this.adapter = adapter;
+            this.listCallbackCustom = callback;
             return this;
+        }
+
+        /**
+         * Limits the display size of a set icon to 48dp.
+         */
+        public Builder limitIconToDefaultSize() {
+            this.limitIconToDefaultSize = true;
+            return this;
+        }
+
+        public Builder maxIconSize(int maxIconSize) {
+            this.maxIconSize = maxIconSize;
+            return this;
+        }
+
+        public Builder maxIconSizeRes(@DimenRes int maxIconSizeRes) {
+            return maxIconSize((int) this.context.getResources().getDimension(maxIconSizeRes));
         }
 
         public Builder showListener(@NonNull OnShowListener listener) {
@@ -1478,6 +1004,36 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
             return this;
         }
 
+        public Builder input(CharSequence hint, CharSequence prefill, boolean allowEmptyInput, @NonNull InputCallback callback) {
+            this.inputCallback = callback;
+            this.inputHint = hint;
+            this.inputPrefill = prefill;
+            this.inputAllowEmpty = allowEmptyInput;
+            return this;
+        }
+
+        public Builder input(CharSequence hint, CharSequence prefill, @NonNull InputCallback callback) {
+            return input(hint, prefill, true, callback);
+        }
+
+        public Builder input(@StringRes int hint, @StringRes int prefill, boolean allowEmptyInput, @NonNull InputCallback callback) {
+            return input(hint == 0 ? null : context.getText(hint), prefill == 0 ? null : context.getText(prefill), allowEmptyInput, callback);
+        }
+
+        public Builder input(@StringRes int hint, @StringRes int prefill, @NonNull InputCallback callback) {
+            return input(hint, prefill, true, callback);
+        }
+
+        public Builder inputType(int type) {
+            this.inputType = type;
+            return this;
+        }
+
+        public Builder alwaysCallInputCallback() {
+            this.alwaysCallInputCallback = true;
+            return this;
+        }
+
         public MaterialDialog build() {
             return new MaterialDialog(this);
         }
@@ -1493,25 +1049,12 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
     public void show() {
         if (Looper.myLooper() != Looper.getMainLooper())
             throw new IllegalStateException("Dialogs can only be shown from the UI thread.");
+
         try {
             super.show();
         } catch (WindowManager.BadTokenException e) {
             throw new DialogException("Bad window token, you cannot show a dialog before an Activity is created or after it's hidden.");
         }
-    }
-
-    private ColorStateList getActionTextStateList(int newPrimaryColor) {
-        final int fallBackButtonColor = DialogUtils.resolveColor(getContext(), android.R.attr.textColorPrimary);
-        if (newPrimaryColor == 0) newPrimaryColor = fallBackButtonColor;
-        int[][] states = new int[][]{
-                new int[]{-android.R.attr.state_enabled}, // disabled
-                new int[]{} // enabled
-        };
-        int[] colors = new int[]{
-                DialogUtils.adjustAlpha(newPrimaryColor, 0.4f),
-                newPrimaryColor
-        };
-        return new ColorStateList(states, colors);
     }
 
     /**
@@ -1523,16 +1066,6 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
      * @return The view from the dialog's layout representing this action button.
      */
     public final View getActionButton(@NonNull DialogAction which) {
-        if (isStacked) {
-            switch (which) {
-                default:
-                    return view.findViewById(R.id.buttonStackedPositive);
-                case NEUTRAL:
-                    return view.findViewById(R.id.buttonStackedNeutral);
-                case NEGATIVE:
-                    return view.findViewById(R.id.buttonStackedNegative);
-            }
-        } else {
             switch (which) {
                 default:
                     return view.findViewById(R.id.buttonDefaultPositive);
@@ -1542,15 +1075,14 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
                     return view.findViewById(R.id.buttonDefaultNegative);
             }
         }
-    }
-
-    /**
+/*
+    *//**
      * This will not return buttons that are actually in the layout itself, since the layout doesn't
      * contain buttons. This is only implemented to avoid crashing issues on Huawei devices. Huawei's
      * stock OS requires this method in order to detect visible buttons.
      *
      * @deprecated Use getActionButton(com.afollestad.materialdialogs.DialogAction)} instead.
-     */
+     *//*
     @Deprecated
     @Override
     public Button getButton(int whichButton) {
@@ -1562,13 +1094,40 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
         } else {
             return mBuilder.negativeText != null ? new Button(getContext()) : null;
         }
+    }*/
+
+    /**
+     * Retrieves the view representing the dialog as a whole. Be careful with this.
+     */
+    public final View getView() {
+        return view;
+    }
+
+    @Nullable
+    public final ListView getListView() {
+        return listView;
+    }
+
+    @Nullable
+    public final EditText getInputEditText() {
+        return input;
     }
 
     /**
-     * Retrieves the frame view containing the title and icon. You can manually change visibility and retrieve children.
+     * Retrieves the TextView that contains the dialog title. If you want to update the
+     * title, use #{@link #setTitle(CharSequence)} instead.
      */
-    public final View getTitleFrame() {
-        return titleFrame;
+    public final TextView getTitleView() {
+        return title;
+    }
+
+    /**
+     * Retrieves the TextView that contains the dialog content. If you want to update the
+     * content (message), use #{@link #setContent(CharSequence)} instead.
+     */
+    @Nullable
+    public final TextView getContentView() {
+        return content;
     }
 
     /**
@@ -1576,12 +1135,14 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
      *
      * @return The custom view that was passed into the Builder.
      */
+    @Nullable
     public final View getCustomView() {
         return mBuilder.customView;
     }
 
     /**
      * Updates an action button's title, causing invalidation to check if the action buttons should be stacked.
+     * Setting an action button's text to null is a shortcut for hiding it, too.
      *
      * @param which The action button to update.
      * @param title The new title of the action button.
@@ -1590,15 +1151,20 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
         switch (which) {
             default:
                 mBuilder.positiveText = title;
+                positiveButton.setText(title);
+                positiveButton.setVisibility(title == null ? View.GONE : View.VISIBLE);
                 break;
             case NEUTRAL:
                 mBuilder.neutralText = title;
+                neutralButton.setText(title);
+                neutralButton.setVisibility(title == null ? View.GONE : View.VISIBLE);
                 break;
             case NEGATIVE:
                 mBuilder.negativeText = title;
+                negativeButton.setText(title);
+                negativeButton.setVisibility(title == null ? View.GONE : View.VISIBLE);
                 break;
         }
-        invalidateActions();
     }
 
     /**
@@ -1608,7 +1174,7 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
      * @param titleRes The string resource of the new title of the action button.
      */
     public final void setActionButton(DialogAction which, @StringRes int titleRes) {
-        setActionButton(which, getContext().getString(titleRes));
+        setActionButton(which, getContext().getText(titleRes));
     }
 
     /**
@@ -1627,9 +1193,12 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
      */
     public final int numberOfActionButtons() {
         int number = 0;
-        if (mBuilder.positiveText != null) number++;
-        if (mBuilder.neutralText != null) number++;
-        if (mBuilder.negativeText != null) number++;
+        if (mBuilder.positiveText != null && positiveButton.getVisibility() == View.VISIBLE)
+            number++;
+        if (mBuilder.neutralText != null && neutralButton.getVisibility() == View.VISIBLE)
+            number++;
+        if (mBuilder.negativeText != null && negativeButton.getVisibility() == View.VISIBLE)
+            number++;
         return number;
     }
 
@@ -1640,19 +1209,16 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
         this.title.setText(title);
     }
 
-    @Override
     public void setIcon(@DrawableRes int resId) {
         icon.setImageResource(resId);
         icon.setVisibility(resId != 0 ? View.VISIBLE : View.GONE);
     }
 
-    @Override
     public void setIcon(Drawable d) {
         icon.setImageDrawable(d);
         icon.setVisibility(d != null ? View.VISIBLE : View.GONE);
     }
 
-    @Override
     public void setIconAttribute(@AttrRes int attrId) {
         Drawable d = DialogUtils.resolveDrawable(mBuilder.context, attrId);
         icon.setImageDrawable(d);
@@ -1661,21 +1227,28 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
 
     public final void setContent(CharSequence content) {
         this.content.setText(content);
-        invalidateCustomViewAssociations(); // invalidates padding in content area scroll (if needed)
+        this.content.setVisibility(TextUtils.isEmpty(content) ? View.GONE : View.VISIBLE);
+    }
+
+    /**
+     * @deprecated Use setContent() instead.
+     */
+    @Deprecated
+    public void setMessage(CharSequence message) {
+        setContent(message);
     }
 
     public final void setItems(CharSequence[] items) {
         if (mBuilder.adapter == null)
             throw new IllegalStateException("This MaterialDialog instance does not yet have an adapter set to it. You cannot use setItems().");
         if (mBuilder.adapter instanceof MaterialDialogAdapter) {
-            mBuilder.adapter = new MaterialDialogAdapter(mBuilder.context,
+            mBuilder.adapter = new MaterialDialogAdapter(this,
                     ListType.getLayoutForType(listType), R.id.title, items);
         } else {
             throw new IllegalStateException("When using a custom adapter, setItems() cannot be used. Set items through the adapter instead.");
         }
         mBuilder.items = items;
         listView.setAdapter(mBuilder.adapter);
-        invalidateCustomViewAssociations();
     }
 
     public final int getCurrentProgress() {
@@ -1684,7 +1257,7 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
     }
 
     public final void incrementProgress(int by) {
-        if (mBuilder.mProgress <= -2)
+        if (mBuilder.progress <= -2)
             throw new IllegalStateException("Cannot use incrementProgress() on this dialog.");
         setProgress(getCurrentProgress() + by);
     }
@@ -1692,23 +1265,25 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
     public final void setProgress(int progress) {
         if (Looper.myLooper() != Looper.getMainLooper())
             throw new IllegalStateException("You can only set the dialog's progress from the UI thread.");
-        else if (mBuilder.mProgress <= -2)
+        else if (mBuilder.progress <= -2)
             throw new IllegalStateException("Cannot use setProgress() on this dialog.");
         mProgress.setProgress(progress);
         int percentage = (int) (((float) getCurrentProgress() / (float) getMaxProgress()) * 100f);
         mProgressLabel.setText(percentage + "%");
+        if (mProgressMinMax != null)
+            mProgressMinMax.setText(getCurrentProgress() + "/" + getMaxProgress());
     }
 
     public final void setMaxProgress(int max) {
         if (Looper.myLooper() != Looper.getMainLooper())
             throw new IllegalStateException("You can only set the dialog's progress from the UI thread.");
-        else if (mBuilder.mProgress <= -2)
+        else if (mBuilder.progress <= -2)
             throw new IllegalStateException("Cannot use setMaxProgress() on this dialog.");
         mProgress.setMax(max);
     }
 
     public final boolean isIndeterminateProgress() {
-        return mBuilder.mIndeterminateProgress;
+        return mBuilder.indeterminateProgress;
     }
 
     public final int getMaxProgress() {
@@ -1721,22 +1296,12 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
     }
 
     /**
-     * Use this to customize any list-specific logic for this dialog (OnItemClickListener, OnLongItemClickListener, etc.)
-     *
-     * @return The ListView instance used by this dialog, or null if not using a list.
-     */
-    @Nullable
-    public ListView getListView() {
-        return listView;
-    }
-
-    /**
      * Convenience method for getting the currently selected index of a single choice list.
      *
      * @return Currently selected index of a single choice list, or -1 if not showing a single choice list
      */
     public int getSelectedIndex() {
-        if (mBuilder.listCallbackSingle != null) {
+        if (mBuilder.listCallbackSingleChoice != null) {
             return mBuilder.selectedIndex;
         } else {
             return -1;
@@ -1750,7 +1315,7 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
      */
     @Nullable
     public Integer[] getSelectedIndices() {
-        if (mBuilder.listCallbackMulti != null) {
+        if (mBuilder.listCallbackMultiChoice != null) {
             return selectedIndicesList.toArray(new Integer[selectedIndicesList.size()]);
         } else {
             return null;
@@ -1790,53 +1355,47 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
         }
     }
 
-    private class MaterialDialogAdapter extends ArrayAdapter<CharSequence> {
-
-        final int itemColor;
-
-        public MaterialDialogAdapter(Context context, int resource, int textViewResourceId, CharSequence[] objects) {
-            super(context, resource, textViewResourceId, objects);
-            itemColor = DialogUtils.resolveColor(getContext(), R.attr.md_item_color, defaultItemColor);
-        }
-
-        @Override
-        public boolean hasStableIds() {
-            return true;
-        }
-
-        @Override
-        public long getItemId(int position) {
-            return position;
-        }
-
-        @SuppressLint("WrongViewCast")
-        @Override
-        public View getView(final int index, View convertView, ViewGroup parent) {
-            final View view = super.getView(index, convertView, parent);
-            TextView tv = (TextView) view.findViewById(R.id.title);
-            switch (listType) {
-                case SINGLE: {
-                    @SuppressLint("CutPasteId")
-                    RadioButton radio = (RadioButton) view.findViewById(R.id.control);
-                    radio.setChecked(mBuilder.selectedIndex == index);
-                    break;
-                }
-                case MULTI: {
-                    @SuppressLint("CutPasteId")
-                    CheckBox checkbox = (CheckBox) view.findViewById(R.id.control);
-                    checkbox.setChecked(selectedIndicesList.contains(index));
-                    break;
-                }
-            }
-            tv.setText(mBuilder.items[index]);
-            tv.setTextColor(itemColor);
-            setTypeface(tv, mBuilder.regularFont);
-            view.setTag(index + ":" + mBuilder.items[index]);
-            return view;
+    @Override
+    public final void onShow(DialogInterface dialog) {
+        super.onShow(dialog);
+        if (input != null) {
+            DialogUtils.showKeyboard(this, mBuilder);
+            if (input.getText().length() > 0)
+                input.setSelection(input.getText().length());
         }
     }
 
-    private static enum ListType {
+    protected void setInternalInputCallback() {
+        if (input == null) return;
+        input.addTextChangedListener(new TextWatcher() {
+        @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+        }
+
+        @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                if (mBuilder.alwaysCallInputCallback)
+                    mBuilder.inputCallback.onInput(MaterialDialog.this, s);
+                if (!mBuilder.inputAllowEmpty) {
+                    final View positiveAb = getActionButton(DialogAction.POSITIVE);
+                    positiveAb.setEnabled(s.toString().trim().length() > 0);
+        }
+            }
+
+        @Override
+            public void afterTextChanged(Editable s) {
+                }
+        });
+                }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        if (input != null)
+            DialogUtils.hideKeyboard(this, mBuilder);
+            }
+
+    protected enum ListType {
         REGULAR, SINGLE, MULTI;
 
         public static int getLayoutForType(ListType type) {
@@ -1853,12 +1412,41 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
         }
     }
 
-    public static interface ListCallback {
+    /**
+     * A callback used for regular list dialogs.
+     */
+    public interface ListCallback {
         void onSelection(MaterialDialog dialog, View itemView, int which, CharSequence text);
     }
 
-    public static interface ListCallbackMulti {
-        void onSelection(MaterialDialog dialog, Integer[] which, CharSequence[] text);
+    /**
+     * A callback used for multi choice (check box) list dialogs.
+     */
+    public interface ListCallbackSingleChoice {
+        /**
+         * Return true to allow the radio button to be checked, if the alwaysCallSingleChoice() option is used.
+         *
+         * @param dialog The dialog of which a list item was selected.
+         * @param which  The index of the item that was selected.
+         * @param text   The text of the  item that was selected.
+         * @return True to allow the radio button to be selected.
+         */
+        boolean onSelection(MaterialDialog dialog, View itemView, int which, CharSequence text);
+    }
+
+    /**
+     * A callback used for multi choice (check box) list dialogs.
+     */
+    public interface ListCallbackMultiChoice {
+        /**
+         * Return true to allow the check box to be checked, if the alwaysCallSingleChoice() option is used.
+         *
+         * @param dialog The dialog of which a list item was selected.
+         * @param which  The indices of the items that were selected.
+         * @param text   The text of the items that were selected.
+         * @return True to allow the checkbox to be selected.
+         */
+        boolean onSelection(MaterialDialog dialog, Integer[] which, CharSequence[] text);
     }
 
     /**
@@ -1903,5 +1491,10 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
         public final String toString() {
             return super.toString();
         }
+    }
+
+    public interface InputCallback {
+
+        void onInput(MaterialDialog dialog, CharSequence input);
     }
 }

@@ -26,6 +26,7 @@ public class ThemeSingleton {
     public int positiveColor = 0;
     public int neutralColor = 0;
     public int negativeColor = 0;
+    public int widgetColor = 0;
     public int itemColor = 0;
     public Drawable icon = null;
     public int backgroundColor = 0;
@@ -41,4 +42,10 @@ public class ThemeSingleton {
     public int btnSelectorNeutral = 0;
     @DrawableRes
     public int btnSelectorNegative = 0;
+
+    public GravityEnum titleGravity = GravityEnum.START;
+    public GravityEnum contentGravity = GravityEnum.START;
+    public GravityEnum btnStackedGravity = GravityEnum.START;
+    public GravityEnum itemsGravity = GravityEnum.START;
+    public GravityEnum buttonsGravity = GravityEnum.START;
 }
