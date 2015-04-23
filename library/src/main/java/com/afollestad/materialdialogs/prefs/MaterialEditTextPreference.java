@@ -37,10 +37,6 @@ public class MaterialEditTextPreference extends EditTextPreference {
     private int mColor = 0;
     private MaterialDialog mDialog;
 
-    public EditText getEditText() {
-        return mEditText;
-    }
-
     String mInitString = "";
     public void setText(String text) {
         mInitString = text;
@@ -95,8 +91,8 @@ public class MaterialEditTextPreference extends EditTextPreference {
         Builder mBuilder = new MaterialDialog.Builder(getContext())
                 .title(getDialogTitle()).titleGravity(GravityEnum.END)
                 .icon(getDialogIcon())
-                .positiveText("ÊÇííÏ")
-                .negativeText("áÛæ")
+                .positiveText("ØªØ£ÛŒÛŒØ¯")
+                .negativeText("Ù„ØºÙˆ")
                 .callback(callback)
                 .dismissListener(this)
                 .content(getDialogMessage())
@@ -113,8 +109,6 @@ public class MaterialEditTextPreference extends EditTextPreference {
 
         MDTintHelper.setTint(getEditText(), mColor);
 
-        mEditText.setTextColor(0Xff616161);
-        mEditText.setText(mInitString);
         TextView message = (TextView) layout.findViewById(android.R.id.message);
         if (getDialogMessage() != null && getDialogMessage().toString().length() > 0) {
             message.setVisibility(View.VISIBLE);

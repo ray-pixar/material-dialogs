@@ -91,12 +91,14 @@ public class MaterialDialog extends DialogBase implements
                 mBuilder.regularFont = TypefaceHelper.get(getContext(), "NotoNaskhArabic-Regular");
         }
 */
+    }
+
     public final void setTypeface(TextView target, Typeface t) {
         if (t == null) return;
         int flags = target.getPaintFlags() | Paint.SUBPIXEL_TEXT_FLAG;
         target.setPaintFlags(flags);
         target.setTypeface(t);
-                }
+    }
 
     protected final void checkIfListInitScroll() {
         if (listView == null)
