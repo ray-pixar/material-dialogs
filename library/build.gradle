@@ -1,6 +1,7 @@
 apply plugin: 'com.android.library'
+/*
 apply plugin: 'bintray-release'
-
+*/
 android {
     compileSdkVersion 21
     buildToolsVersion "21.1.2"
@@ -11,9 +12,11 @@ android {
         versionCode 1
         versionName "0.6.3.2"
     }
+/*
     lintOptions {
         abortOnError false
     }
+*/
 }
 
 dependencies {
@@ -22,7 +25,7 @@ dependencies {
     compile 'com.android.support:support-annotations:21.0.3'
     compile 'com.android.support:recyclerview-v7:21.0.3'
 }
-
+/*
 publish {
     userOrg = 'drummer-aidan'
     groupId = 'com.afollestad'
@@ -33,3 +36,4 @@ publish {
     issueTracker = "${website}/issues"
     repository = "${website}.git"
 }
+*/

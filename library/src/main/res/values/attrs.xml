@@ -1,6 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
+    <!-- Define the values for the attribute -->
+    <attr name="typeface" format="enum">
+        <enum name="NotoNaskh_Regular" value="0"/>
+        <enum name="NotNaskh_Bold" value="1"/>
+        <enum name="NotoKufi_Regular" value="2"/>
+        <enum name="NotoKufi_Bold" value="3"/>
+        <enum name="NotoFarsi_Regular" value="4"/>
+        <enum name="NotoFarsi_Bold" value="5"/>
+    </attr>
+
+    <!-- Tell Android that the class "CustomButton" can be styled,
+         and which attributes it supports -->
+    <declare-styleable name="MaterialTextView">
+        <attr name="typeface"/>
+    </declare-styleable>
+
+
+
     <!-- These top three attributes are not accessible to library users -->
     <attr name="md_divider" format="color" />
 

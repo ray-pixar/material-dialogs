@@ -16,6 +16,7 @@ import android.view.WindowManager;
 import android.widget.EditText;
 import android.widget.TextView;
 
+import com.afollestad.materialdialogs.GravityEnum;
 import com.afollestad.materialdialogs.MaterialDialog;
 import com.afollestad.materialdialogs.MaterialDialog.Builder;
 import com.afollestad.materialdialogs.MaterialDialog.ButtonCallback;
@@ -34,7 +35,9 @@ public class MaterialEditTextPreference extends DialogPreference {
         return mEditText;
     }
 
+    String mInitString = "";
     public void setText(String text) {
+        mInitString = text;
         final boolean wasBlocking = shouldDisableDependents();
         persistString(text);
         final boolean isBlocking = shouldDisableDependents();
@@ -57,22 +60,21 @@ public class MaterialEditTextPreference extends DialogPreference {
     protected void showDialog(Bundle state) {
         Context context = getContext();
 
-        // Color our EditText if need be. Lollipop does it by default
-        if (VERSION.SDK_INT < VERSION_CODES.LOLLIPOP)
-            mEditText.getBackground().setColorFilter(mColor, PorterDuff.Mode.SRC_ATOP);
 
         // Set up our builder
         Builder mBuilder = new MaterialDialog.Builder(getContext())
-                .title(getDialogTitle())
+                .title(getDialogTitle()).titleGravity(GravityEnum.END)
                 .icon(getDialogIcon())
-                .positiveText(getPositiveButtonText())
-                .negativeText(getNegativeButtonText())
+                .positiveText("تایید")
+                .negativeText("لغو")
                 .callback(callback)
                 .content(getDialogMessage());
 
         // Create our layout, put the EditText inside, then add to dialog
         ViewGroup layout = (ViewGroup) LayoutInflater.from(context).inflate(R.layout.md_input_dialog, null);
         mEditText = (EditText) layout.findViewById(android.R.id.edit);
+        mEditText.setTextColor(0Xff616161);
+        mEditText.setText(mInitString);
         TextView message = (TextView) layout.findViewById(android.R.id.message);
         if (getDialogMessage() != null && getDialogMessage().toString().length() > 0) {
             message.setVisibility(View.VISIBLE);
@@ -81,6 +83,10 @@ public class MaterialEditTextPreference extends DialogPreference {
             message.setVisibility(View.GONE);
         }
         mBuilder.customView(layout, false);
+
+//        Color our EditText if need be. Lollipop does it by default
+        if (VERSION.SDK_INT < VERSION_CODES.LOLLIPOP)
+            mEditText.getBackground().setColorFilter(mColor, PorterDuff.Mode.SRC_ATOP);
 
         // Create the dialog
         MaterialDialog mDialog = mBuilder.build();

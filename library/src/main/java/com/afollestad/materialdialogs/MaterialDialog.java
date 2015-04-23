@@ -101,9 +101,10 @@ public class MaterialDialog extends DialogBase implements View.OnClickListener {
 
         if (!mBuilder.useCustomFonts) {
             if (mBuilder.mediumFont == null)
-                mBuilder.mediumFont = TypefaceHelper.get(getContext(), "Roboto-Medium");
+                mBuilder.mediumFont = TypefaceHelper.get(getContext(), "NotoNaskhArabic-Bold");
             if (mBuilder.regularFont == null)
-                mBuilder.regularFont = TypefaceHelper.get(getContext(), "Roboto-Regular");
+//                mBuilder.regularFont = TypefaceHelper.get(getContext(), "Roboto-Regular");
+                mBuilder.regularFont = TypefaceHelper.get(getContext(), "NotoNaskhArabic-Regular");
         }
 
         final LayoutInflater inflater = LayoutInflater.from(mBuilder.context);

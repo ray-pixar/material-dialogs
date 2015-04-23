@@ -7,6 +7,7 @@ import android.preference.ListPreference;
 import android.util.AttributeSet;
 import android.view.View;
 
+import com.afollestad.materialdialogs.GravityEnum;
 import com.afollestad.materialdialogs.MaterialDialog;
 
 /**
@@ -32,10 +33,10 @@ public class MaterialListPreference extends ListPreference {
     protected void showDialog(Bundle state) {
         int preselect = findIndexOfValue(getValue());
         MaterialDialog.Builder builder = new MaterialDialog.Builder(context)
-                .title(getDialogTitle())
+                .title(getDialogTitle()).titleGravity(GravityEnum.END)
                 .content(getDialogMessage())
                 .icon(getDialogIcon())
-                .negativeText(getNegativeButtonText())
+                .negativeText("لغو")
                 .items(getEntries())
                 .itemsCallbackSingleChoice(preselect, new MaterialDialog.ListCallback() {
                     @Override
